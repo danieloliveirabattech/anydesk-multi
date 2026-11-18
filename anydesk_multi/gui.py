@@ -9,6 +9,7 @@ Execute com:  python -m anydesk_multi.gui
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -135,6 +136,178 @@ class SlotCard(QtWidgets.QFrame):
 
 
 # --------------------------------------------------------------------------- #
+# Tour guiado (onboarding) — overlay escurecido + balão de dica
+# --------------------------------------------------------------------------- #
+class CoachOverlay(QtWidgets.QWidget):
+    """Sobreposição que escurece a janela, destaca um elemento e mostra uma dica.
+
+    Cada passo é um dict: ``{"title", "text", "targets": [widget, ...] | None}``.
+    Com ``targets=None`` o passo é centralizado (sem destaque).
+    """
+
+    PAD = 8  # folga ao redor do elemento destacado
+
+    def __init__(self, parent: QtWidgets.QWidget, steps: list[dict], on_finish):
+        super().__init__(parent)
+        self._steps = steps
+        self._i = 0
+        self._on_finish = on_finish
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setGeometry(parent.rect())
+
+        self.bubble = QtWidgets.QFrame(self)
+        self.bubble.setObjectName("coach")
+        self.bubble.setFixedWidth(340)
+
+        self._title = QtWidgets.QLabel(self.bubble)
+        self._title.setObjectName("coachTitle")
+        self._title.setWordWrap(True)
+        self._body = QtWidgets.QLabel(self.bubble)
+        self._body.setObjectName("coachBody")
+        self._body.setWordWrap(True)
+        self._counter = QtWidgets.QLabel(self.bubble)
+        self._counter.setObjectName("coachCounter")
+
+        self._btn_skip = QtWidgets.QPushButton("Pular", self.bubble)
+        self._btn_prev = QtWidgets.QPushButton("Anterior", self.bubble)
+        self._btn_next = QtWidgets.QPushButton("Próximo", self.bubble)
+        self._btn_next.setObjectName("primary")
+        self._btn_skip.clicked.connect(self.finish)
+        self._btn_prev.clicked.connect(self._prev)
+        self._btn_next.clicked.connect(self._next)
+
+        lay = QtWidgets.QVBoxLayout(self.bubble)
+        lay.setContentsMargins(18, 16, 18, 14)
+        lay.setSpacing(8)
+        lay.addWidget(self._title)
+        lay.addWidget(self._body)
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(self._counter)
+        row.addStretch(1)
+        row.addWidget(self._btn_skip)
+        row.addWidget(self._btn_prev)
+        row.addWidget(self._btn_next)
+        lay.addLayout(row)
+
+        self.setStyleSheet(
+            """
+            QFrame#coach { background:#ffffff; border:1px solid #e3e7ee;
+                           border-radius:12px; }
+            QLabel#coachTitle { font-size:16px; font-weight:700; color:#20242b; }
+            QLabel#coachBody { font-size:13px; color:#4a515c; }
+            QLabel#coachCounter { color:#9aa1ad; font-size:12px; }
+            QFrame#coach QPushButton { background:#ffffff; border:1px solid #d4dae3;
+                           border-radius:8px; padding:6px 12px; color:#2c313a; }
+            QFrame#coach QPushButton:hover { background:#f4f6f9; }
+            QFrame#coach QPushButton#primary { background:#ef443b; border:none;
+                           color:#ffffff; font-weight:600; }
+            QFrame#coach QPushButton#primary:hover { background:#d83a32; }
+            """
+        )
+        self._render()
+
+    # -- geometria ---------------------------------------------------- #
+    def _current_target_rect(self) -> QtCore.QRect | None:
+        targets = self._steps[self._i].get("targets")
+        if not targets:
+            return None
+        rect = QtCore.QRect()
+        for w in targets:
+            if w is None or not w.isVisible():
+                continue
+            top_left = w.mapTo(self, QtCore.QPoint(0, 0))
+            r = QtCore.QRect(top_left, w.size())
+            rect = r if rect.isNull() else rect.united(r)
+        return None if rect.isNull() else rect.adjusted(
+            -self.PAD, -self.PAD, self.PAD, self.PAD
+        )
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        dim = QtGui.QColor(16, 18, 22, 150)
+        full = self.rect()
+        hole = self._current_target_rect()
+
+        if hole is None:
+            painter.fillRect(full, dim)
+        else:
+            # Escurece tudo, menos o buraco do elemento destacado.
+            painter.fillRect(QtCore.QRect(0, 0, full.width(), hole.top()), dim)
+            painter.fillRect(
+                QtCore.QRect(0, hole.bottom(), full.width(), full.height() - hole.bottom()),
+                dim,
+            )
+            painter.fillRect(QtCore.QRect(0, hole.top(), hole.left(), hole.height()), dim)
+            painter.fillRect(
+                QtCore.QRect(hole.right(), hole.top(), full.width() - hole.right(), hole.height()),
+                dim,
+            )
+            pen = QtGui.QPen(QtGui.QColor("#ef443b"))
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(hole, 8, 8)
+
+    def _place_bubble(self, hole: QtCore.QRect | None) -> None:
+        self.bubble.adjustSize()
+        bw, bh = self.bubble.width(), self.bubble.height()
+        margin = 14
+        if hole is None:
+            x = (self.width() - bw) // 2
+            y = (self.height() - bh) // 2
+        else:
+            x = min(max(margin, hole.left()), self.width() - bw - margin)
+            if hole.bottom() + margin + bh <= self.height():
+                y = hole.bottom() + margin
+            else:
+                y = max(margin, hole.top() - margin - bh)
+        self.bubble.move(int(x), int(y))
+
+    # -- navegação ---------------------------------------------------- #
+    def _render(self) -> None:
+        step = self._steps[self._i]
+        self._title.setText(step["title"])
+        self._body.setText(step["text"])
+        self._counter.setText(f"{self._i + 1}/{len(self._steps)}")
+        self._btn_prev.setVisible(self._i > 0)
+        last = self._i == len(self._steps) - 1
+        self._btn_next.setText("Concluir" if last else "Próximo")
+        self._btn_skip.setVisible(not last)
+        self.setGeometry(self.parent().rect())
+        self._place_bubble(self._current_target_rect())
+        self.update()
+
+    def _next(self) -> None:
+        if self._i >= len(self._steps) - 1:
+            self.finish()
+        else:
+            self._i += 1
+            self._render()
+
+    def _prev(self) -> None:
+        if self._i > 0:
+            self._i -= 1
+            self._render()
+
+    def finish(self) -> None:
+        cb, self._on_finish = self._on_finish, None
+        self.hide()
+        self.deleteLater()
+        if cb:
+            cb()
+
+    def reposition(self) -> None:
+        self.setGeometry(self.parent().rect())
+        self._place_bubble(self._current_target_rect())
+        self.update()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        # Bloqueia cliques no fundo durante o tour (o balão trata os seus).
+        event.accept()
+
+
+# --------------------------------------------------------------------------- #
 # Janela principal
 # --------------------------------------------------------------------------- #
 class MainWindow(QtWidgets.QMainWindow):
@@ -158,6 +331,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.refresh()
         else:
             self.statusBar().showMessage("AnyDesk indisponível.", 0)
+
+        # Tour de primeira execução.
+        self._overlay: CoachOverlay | None = None
+        if self.manager and not self._load_tour_done():
+            QtCore.QTimer.singleShot(600, self._start_tour)
 
     # ---- construção -------------------------------------------------- #
     def _build_ui(self) -> None:
@@ -204,6 +382,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Rodapé
         footer = QtWidgets.QHBoxLayout()
+        self.btn_help = QtWidgets.QPushButton("?")
+        self.btn_help.setObjectName("help")
+        self.btn_help.setFixedWidth(30)
+        self.btn_help.setToolTip("Rever o tutorial")
+        self.btn_help.clicked.connect(self._start_tour)
+        footer.addWidget(self.btn_help)
         footer.addStretch(1)
         self.btn_refresh = QtWidgets.QPushButton("Atualizar")
         self.btn_refresh.clicked.connect(self.refresh)
@@ -252,6 +436,8 @@ class MainWindow(QtWidgets.QMainWindow):
             QPushButton#danger { color:#ef443b; border:1px solid #f3b9b4; }
             QPushButton#danger:hover { background:#fdeceb; }
             QPushButton#danger:disabled { color:#f3a9a4; border-color:#f3d6d3; }
+            QPushButton#help { font-weight:700; color:#8a919d; }
+            QPushButton#help:hover { background:#eceff3; border-color:#c2cad6; }
             QStatusBar { color:#9aa1ad; }
             QToolTip { background:#20242b; color:#ffffff; border:none; padding:4px; }
             """
@@ -404,6 +590,90 @@ class MainWindow(QtWidgets.QMainWindow):
                 f"{n} processo(s) encerrado(s) no total.", 5000
             ),
         )
+
+    # ---- tutorial ---------------------------------------------------- #
+    def _ui_state_path(self) -> Path:
+        base = self.manager.data_dir if self.manager else config.default_data_dir()
+        return Path(base) / "ui_state.json"
+
+    def _load_tour_done(self) -> bool:
+        try:
+            data = json.loads(self._ui_state_path().read_text(encoding="utf-8"))
+            return bool(data.get("tour_done"))
+        except (OSError, ValueError):
+            return False
+
+    def _save_tour_done(self) -> None:
+        try:
+            p = self._ui_state_path()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps({"tour_done": True}), encoding="utf-8")
+        except OSError:
+            pass
+
+    def _tour_steps(self) -> list[dict]:
+        c = self.cards[min(self.cards)]
+        return [
+            {
+                "title": "Bem-vindo ao AnyDesk Multi",
+                "text": "Rode várias sessões isoladas do AnyDesk ao mesmo tempo, "
+                "cada uma com seu próprio ID. Vou mostrar o básico em alguns passos.",
+                "targets": None,
+            },
+            {
+                "title": "Conexão Rápida",
+                "text": "Digite um ID AnyDesk aqui e clique em Conexão Rápida: o app "
+                "conecta no primeiro slot livre automaticamente.",
+                "targets": [self.quick_input, self.quick_btn],
+            },
+            {
+                "title": "Os slots",
+                "text": "Cada cartão é uma instância isolada do AnyDesk, com ID "
+                "próprio. Dá para rodar até quatro ao mesmo tempo, sem uma "
+                "atrapalhar a outra.",
+                "targets": [c],
+            },
+            {
+                "title": "Abrir e conectar",
+                "text": "“Abrir” sobe o slot sem conectar. “Conectar…” pede um ID e "
+                "conecta usando esse slot específico.",
+                "targets": [c.btn_launch, c.btn_connect],
+            },
+            {
+                "title": "Novo ID e Limpar",
+                "text": "“Novo ID” gera um AnyDesk ID novo para o slot. “Limpar” apaga "
+                "o cache da sessão, mantendo o ID.",
+                "targets": [c.btn_clean, c.btn_newid],
+            },
+            {
+                "title": "Encerrar e atualizar",
+                "text": "“Encerrar tudo” fecha todas as sessões de uma vez. "
+                "“Atualizar” relê o estado dos slots na hora.",
+                "targets": [self.btn_refresh, self.btn_killall],
+            },
+            {
+                "title": "Pronto!",
+                "text": "É só isso. Você pode rever este tutorial quando quiser no "
+                "botão “?”.",
+                "targets": [self.btn_help],
+            },
+        ]
+
+    def _start_tour(self, *_args) -> None:
+        if self._overlay is not None:
+            return
+        self._overlay = CoachOverlay(self, self._tour_steps(), self._on_tour_finish)
+        self._overlay.show()
+        self._overlay.raise_()
+
+    def _on_tour_finish(self) -> None:
+        self._overlay = None
+        self._save_tour_done()
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        if getattr(self, "_overlay", None) is not None:
+            self._overlay.reposition()
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # noqa: N802
         self.timer.stop()
