@@ -60,11 +60,20 @@ Ordem de resolução por slot: binário explícito (API `slot_binaries=`) →
 ## Requisitos
 
 - Windows
-- [AnyDesk](https://anydesk.com/) instalado (ou um `AnyDesk.exe` portátil)
 - Python 3.9+
 
-> O AnyDesk **não** é redistribuído por este projeto. Você usa o executável que
-> já tem, respeitando a licença do AnyDesk.
+O projeto **já vem com um `AnyDesk.exe` embutido** (`anydesk_multi/vendor/`), que
+é usado por padrão — não é preciso ter o AnyDesk instalado. Para usar outro
+executável, aponte com `--exe` ou a variável `ANYDESK_MULTI_EXE` (têm prioridade
+sobre o embutido).
+
+Ordem de detecção: `--exe` → `ANYDESK_MULTI_EXE` → **AnyDesk embutido** →
+instalação do sistema → `PATH`.
+
+> **Aviso de terceiros:** o `AnyDesk.exe` embutido é software proprietário da
+> AnyDesk Software GmbH, redistribuído aqui apenas por conveniência e sujeito à
+> licença do AnyDesk (<https://anydesk.com/pt/terms>). Este projeto não é
+> afiliado à AnyDesk.
 
 ## Instalação
 

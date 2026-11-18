@@ -75,15 +75,43 @@ def _candidate_exe_paths() -> list[Path]:
     return [Path(c) for c in candidates]
 
 
+def bundled_anydesk_exe() -> Path | None:
+    """Caminho do AnyDesk.exe embutido no pacote (``anydesk_multi/vendor``).
+
+    Retorna ``None`` se o pacote foi instalado sem o binário.
+    """
+    try:
+        from importlib.resources import files
+
+        res = Path(str(files("anydesk_multi") / "vendor" / "AnyDesk.exe"))
+        if res.exists():
+            return res
+    except (ModuleNotFoundError, FileNotFoundError, TypeError, OSError):
+        pass
+    fallback = Path(__file__).resolve().parent / "vendor" / "AnyDesk.exe"
+    return fallback if fallback.exists() else None
+
+
 def find_anydesk_exe(explicit: str | None = None) -> Path | None:
     """Resolve o caminho do AnyDesk.exe.
 
-    Ordem: argumento explícito -> variável de ambiente / caminhos comuns ->
-    PATH do sistema. Retorna ``None`` se nada for encontrado.
+    Ordem: argumento explícito -> variável de ambiente -> binário EMBUTIDO no
+    pacote -> instalação do sistema -> PATH. Retorna ``None`` se nada servir.
     """
     if explicit:
         p = Path(explicit).expanduser()
         return p if p.exists() else None
+
+    env = os.environ.get(ENV_ANYDESK_EXE)
+    if env:
+        p = Path(env).expanduser()
+        if p.exists():
+            return p
+
+    # Binário embutido: é o padrão do projeto.
+    bundled = bundled_anydesk_exe()
+    if bundled is not None:
+        return bundled
 
     for p in _candidate_exe_paths():
         if p.exists():
