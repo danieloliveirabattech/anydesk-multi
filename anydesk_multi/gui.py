@@ -685,6 +685,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
 def main(argv: list[str] | None = None) -> int:
     app = QtWidgets.QApplication(argv if argv is not None else sys.argv)
+    icon_path = config.bundled_icon()
+    if icon_path is not None:
+        app.setWindowIcon(QtGui.QIcon(str(icon_path)))
     exe = config.find_anydesk_exe()
     manager = None
     if exe is not None:

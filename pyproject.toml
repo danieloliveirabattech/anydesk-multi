@@ -30,4 +30,4 @@ packages = ["anydesk_multi"]
 include-package-data = true
 
 [tool.setuptools.package-data]
-anydesk_multi = ["vendor/*.exe"]
+anydesk_multi = ["vendor/*.exe", "assets/*.ico", "assets/*.png"]

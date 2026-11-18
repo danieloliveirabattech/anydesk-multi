@@ -100,6 +100,26 @@ def bundled_anydesk_exe() -> Path | None:
     return fallback if fallback.exists() else None
 
 
+def bundled_icon() -> Path | None:
+    """Caminho do ícone do app (``anydesk_multi/assets/icon.ico``)."""
+    rel = ("assets", "icon.ico")
+    if getattr(sys, "frozen", False):
+        base = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+        p = base.joinpath("anydesk_multi", *rel)
+        if p.exists():
+            return p
+    try:
+        from importlib.resources import files
+
+        res = Path(str(files("anydesk_multi").joinpath(*rel)))
+        if res.exists():
+            return res
+    except (ModuleNotFoundError, FileNotFoundError, TypeError, OSError):
+        pass
+    fallback = Path(__file__).resolve().parent.joinpath(*rel)
+    return fallback if fallback.exists() else None
+
+
 def find_anydesk_exe(explicit: str | None = None) -> Path | None:
     """Resolve o caminho do AnyDesk.exe.
 
