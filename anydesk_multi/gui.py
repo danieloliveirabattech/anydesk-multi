@@ -157,9 +157,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.timer.start()
             self.refresh()
         else:
-            self._set_banner(
-                "AnyDesk.exe não encontrado. Clique em “Trocar AnyDesk.exe”."
-            )
+            self.statusBar().showMessage("AnyDesk indisponível.", 0)
 
     # ---- construção -------------------------------------------------- #
     def _build_ui(self) -> None:
@@ -190,13 +188,6 @@ class MainWindow(QtWidgets.QMainWindow):
         header.addWidget(self.quick_btn)
         root.addLayout(header)
 
-        # Banner informativo
-        self.banner = QtWidgets.QLabel("")
-        self.banner.setObjectName("banner")
-        self.banner.setVisible(False)
-        self.banner.setWordWrap(True)
-        root.addWidget(self.banner)
-
         # Grade de cards (2 colunas)
         grid = QtWidgets.QGridLayout()
         grid.setSpacing(14)
@@ -213,28 +204,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Rodapé
         footer = QtWidgets.QHBoxLayout()
-        self.exe_label = QtWidgets.QLabel(self._exe_text())
-        self.exe_label.setObjectName("footerText")
-        footer.addWidget(self.exe_label)
         footer.addStretch(1)
-        self.btn_exe = QtWidgets.QPushButton("Trocar AnyDesk.exe")
-        self.btn_exe.clicked.connect(self._choose_exe)
         self.btn_refresh = QtWidgets.QPushButton("Atualizar")
         self.btn_refresh.clicked.connect(self.refresh)
         self.btn_killall = QtWidgets.QPushButton("Encerrar tudo")
         self.btn_killall.setObjectName("danger")
         self.btn_killall.clicked.connect(self._kill_all)
-        footer.addWidget(self.btn_exe)
         footer.addWidget(self.btn_refresh)
         footer.addWidget(self.btn_killall)
         root.addLayout(footer)
 
         self.statusBar().showMessage("Pronto.")
-
-    def _exe_text(self) -> str:
-        if self.manager:
-            return f"AnyDesk: {self.manager.anydesk_exe}"
-        return "AnyDesk: (não definido)"
 
     # ---- estilo ------------------------------------------------------ #
     def _apply_style(self) -> None:
@@ -245,8 +225,6 @@ class MainWindow(QtWidgets.QMainWindow):
                       font-family:'Segoe UI',sans-serif; font-size:13px; }
             QMainWindow, QStatusBar { background:#f2f4f7; }
             QLabel#logo { font-size:20px; font-weight:700; color:#20242b; }
-            QLabel#banner { background:#fdeceb; color:#b02a20;
-                            border:1px solid #f3b9b4; border-radius:8px; padding:10px; }
             QFrame#card { background:#ffffff; border:1px solid #e3e7ee;
                           border-radius:10px; }
             QLabel#cardTitle { font-size:14px; font-weight:600; color:#20242b; }
@@ -256,7 +234,6 @@ class MainWindow(QtWidgets.QMainWindow):
             QLabel#state { color:#9aa1ad; }
             QLabel#dotOn  { color:#2bb24c; font-size:15px; }
             QLabel#dotOff { color:#c3c9d2; font-size:15px; }
-            QLabel#footerText { color:#9aa1ad; font-size:11px; }
             QLineEdit { background:#ffffff; border:1px solid #d4dae3;
                         border-radius:8px; padding:8px 11px; color:#20242b; }
             QLineEdit:focus { border:1px solid #ef443b; }
@@ -281,13 +258,6 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
     # ---- helpers de estado ------------------------------------------ #
-    def _set_banner(self, text: str) -> None:
-        if text:
-            self.banner.setText(text)
-            self.banner.setVisible(True)
-        else:
-            self.banner.setVisible(False)
-
     def _set_all_busy(self, busy: bool) -> None:
         for c in self.cards.values():
             c.set_busy(busy)
@@ -347,7 +317,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _require_manager(self) -> bool:
         if self.manager:
             return True
-        self.statusBar().showMessage("Defina o AnyDesk.exe primeiro.", 5000)
+        self.statusBar().showMessage("AnyDesk indisponível.", 5000)
         return False
 
     def _quick_connect(self) -> None:
@@ -434,25 +404,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 f"{n} processo(s) encerrado(s) no total.", 5000
             ),
         )
-
-    def _choose_exe(self) -> None:
-        start_dir = str(self._exe_hint.parent) if self._exe_hint else str(Path.home())
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Selecione o AnyDesk.exe", start_dir, "Executáveis (*.exe)"
-        )
-        if not path:
-            return
-        try:
-            self.manager = AnyDeskManager(anydesk_exe=path)
-        except FileNotFoundError as exc:
-            self.statusBar().showMessage(str(exc), 6000)
-            return
-        self._exe_hint = Path(path)
-        self.exe_label.setText(self._exe_text())
-        self._set_banner("")
-        self.timer.start()
-        self.refresh()
-        self.statusBar().showMessage("AnyDesk definido.", 4000)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # noqa: N802
         self.timer.stop()
