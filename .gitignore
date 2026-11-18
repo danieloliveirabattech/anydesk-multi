@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# IDEs
+.vscode/
+.idea/
+
+# SO
+Thumbs.db
+.DS_Store
+
+# Dados locais do app (perfis isolados, binários copiados por slot)
+# Nunca devem ir para o repositório.
+AnyDeskMulti/
+.anydesk-multi/

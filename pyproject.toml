@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anydesk-multi"
+version = "0.1.0"
+description = "Roda várias instâncias isoladas do AnyDesk em paralelo (Windows)."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Seu Nome" }]
+keywords = ["anydesk", "remote-desktop", "windows", "multi-instance"]
+dependencies = ["psutil>=5.9"]
+
+[project.optional-dependencies]
+gui = ["PyQt6>=6.6"]
+
+[project.urls]
+Homepage = "https://github.com/SEU_USUARIO/anydesk-multi"
+
+[project.scripts]
+anydesk-multi = "anydesk_multi.cli:main"
+
+[project.gui-scripts]
+anydesk-multi-gui = "anydesk_multi.gui:main"
+
+[tool.setuptools]
+packages = ["anydesk_multi"]
