@@ -215,7 +215,8 @@ class CoachOverlay(QtWidgets.QWidget):
         for w in targets:
             if w is None or not w.isVisible():
                 continue
-            top_left = w.mapTo(self, QtCore.QPoint(0, 0))
+            # O overlay não é ancestral dos alvos; mapeia via coordenadas globais.
+            top_left = self.mapFromGlobal(w.mapToGlobal(QtCore.QPoint(0, 0)))
             r = QtCore.QRect(top_left, w.size())
             rect = r if rect.isNull() else rect.united(r)
         return None if rect.isNull() else rect.adjusted(
