@@ -9,7 +9,7 @@ description = "Roda várias instâncias isoladas do AnyDesk em paralelo (Windows
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-authors = [{ name = "Seu Nome" }]
+authors = [{ name = "odan" }]
 keywords = ["anydesk", "remote-desktop", "windows", "multi-instance"]
 dependencies = ["psutil>=5.9"]
 
@@ -17,7 +17,7 @@ dependencies = ["psutil>=5.9"]
 gui = ["PyQt6>=6.6"]
 
 [project.urls]
-Homepage = "https://github.com/SEU_USUARIO/anydesk-multi"
+Homepage = "https://github.com/danieloliveirabattech/anydesk-multi"
 
 [project.scripts]
 anydesk-multi = "anydesk_multi.cli:main"
