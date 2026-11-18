@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from pathlib import Path
 
 #: Número padrão de instâncias (slots) gerenciadas em paralelo.
@@ -80,6 +81,13 @@ def bundled_anydesk_exe() -> Path | None:
 
     Retorna ``None`` se o pacote foi instalado sem o binário.
     """
+    # Executável empacotado com PyInstaller (onefile): recursos ficam em _MEIPASS.
+    if getattr(sys, "frozen", False):
+        base = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+        p = base / "anydesk_multi" / "vendor" / "AnyDesk.exe"
+        if p.exists():
+            return p
+
     try:
         from importlib.resources import files
 

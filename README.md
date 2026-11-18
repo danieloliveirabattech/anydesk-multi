@@ -27,6 +27,16 @@ processo depois, o executável é copiado uma vez por slot
 └─ slot2\profile\AppData\Roaming\AnyDesk\system.conf   (ID isolado do slot 2)
 ```
 
+## Baixar (executável pronto)
+
+Baixe o `.exe` pronto para Windows na página de **Releases**:
+
+- https://github.com/danieloliveirabattech/anydesk-multi/releases
+
+Pegue o `AnyDeskMulti.exe` da versão mais recente e execute — não precisa
+instalar Python nem o AnyDesk (ele já vem embutido). O executável é gerado
+automaticamente pelo GitHub Actions a cada nova versão.
+
 ## Isolamento real: um binário por slot
 
 Cópias **idênticas** do mesmo `AnyDesk.exe` compartilham o serviço/IPC do
@@ -159,6 +169,19 @@ Use apenas em máquinas e com clientes que você tem autorização para acessar.
 Acesso remoto sem consentimento é ilegal na maioria das jurisdições. Esta
 ferramenta apenas orquestra o AnyDesk; toda conexão continua sujeita às
 aprovações e à política do próprio AnyDesk.
+
+## Publicar uma nova versão
+
+O executável é compilado e publicado automaticamente pelo GitHub Actions a cada
+tag `v*`. Para lançar:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+O workflow [`.github/workflows/release.yml`](.github/workflows/release.yml)
+compila o `.exe` (PyInstaller, onefile) no Windows e anexa à Release da tag.
 
 ## Licença
 
