@@ -283,70 +283,28 @@ class AnyDeskManager:
                     pass
 
     # ------------------------------------------------------------------ #
-    # Identificação visual de janela
+    # Janelas (user32)
     # ------------------------------------------------------------------ #
-    def _tag_window_title_async(self, slot: int, remote_id: str | None = None) -> None:
-        """Renomeia a janela do AnyDesk para identificar o slot (ex.: AnyDesk [SLOT 1])."""
-        def _worker():
-            try:
-                user32 = getattr(ctypes, "windll", None)
-                if not user32 or not hasattr(user32, "user32"):
-                    return
-                u32 = user32.user32
-                WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
-                fmt_id = self.format_id(remote_id) if remote_id else ""
-                custom_title = (
-                    f"AnyDesk [SESSÃO {slot}] • Conectando em {fmt_id}"
-                    if fmt_id
-                    else f"AnyDesk [SESSÃO {slot}]"
-                )
+    @staticmethod
+    def _user32():
+        """Retorna ``ctypes.windll.user32`` no Windows, ou ``None`` fora dele."""
+        windll = getattr(ctypes, "windll", None)
+        return windll.user32 if (windll and hasattr(windll, "user32")) else None
 
-                for delay in (1.0, 2.0, 3.5, 5.0):
-                    time.sleep(delay)
-                    scan = self.scan()
-                    pids = set(scan.get(slot, SlotStatus(slot, False)).pids)
-                    if not pids:
-                        continue
+    def _slot_window_handles(self, slot: int) -> list:
+        """HWNDs de janelas visíveis (com título) dos processos da sessão.
 
-                    def enum_cb(hwnd, _):
-                        if u32.IsWindow(hwnd) and u32.IsWindowVisible(hwnd):
-                            pid = ctypes.c_ulong()
-                            u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-                            if pid.value in pids:
-                                length = u32.GetWindowTextLengthW(hwnd)
-                                if length > 0:
-                                    buff = ctypes.create_unicode_buffer(length + 1)
-                                    u32.GetWindowTextW(hwnd, buff, length + 1)
-                                    title = buff.value
-                                    if "anydesk" in title.lower() and f"[sessão {slot}]".lower() not in title.lower() and f"[slot {slot}]".lower() not in title.lower():
-                                        u32.SetWindowTextW(hwnd, custom_title)
-                        return True
-
-                    u32.EnumWindows(WNDENUMPROC(enum_cb), 0)
-            except Exception:
-                pass
-
-        threading.Thread(target=_worker, daemon=True).start()
-
-    def focus_slot(self, slot: int) -> bool:
-        """Traz a janela existente da sessão para frente (restaura se minimizada).
-
-        Retorna ``True`` se encontrou e focou alguma janela da sessão.
+        Base compartilhada por :meth:`focus_slot` e :meth:`_tag_window_title_async`.
+        Lista vazia fora do Windows ou se ainda não houver janela.
         """
-        try:
-            windll = getattr(ctypes, "windll", None)
-            if not windll or not hasattr(windll, "user32"):
-                return False
-            u32 = windll.user32
-        except Exception:
-            return False
-
+        u32 = self._user32()
+        if u32 is None:
+            return []
         pids = set(self.scan().get(slot, SlotStatus(slot, False)).pids)
         if not pids:
-            return False
-
+            return []
         found: list = []
-        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        wndenumproc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
 
         def enum_cb(hwnd, _):
             try:
@@ -360,13 +318,52 @@ class AnyDeskManager:
             return True
 
         try:
-            u32.EnumWindows(WNDENUMPROC(enum_cb), 0)
+            u32.EnumWindows(wndenumproc(enum_cb), 0)
         except Exception:
-            return False
+            return []
+        return found
 
-        if not found:
+    def _tag_window_title_async(self, slot: int, remote_id: str | None = None) -> None:
+        """Renomeia a janela do AnyDesk para identificar a sessão (ex.: AnyDesk [SESSÃO 1])."""
+        u32 = self._user32()
+        if u32 is None:
+            return
+        fmt_id = self.format_id(remote_id) if remote_id else ""
+        custom_title = (
+            f"AnyDesk [SESSÃO {slot}] • Conectando em {fmt_id}"
+            if fmt_id
+            else f"AnyDesk [SESSÃO {slot}]"
+        )
+
+        def _worker():
+            # A janela do AnyDesk demora a aparecer: tenta em algumas janelas de tempo.
+            for delay in (1.0, 2.0, 3.5, 5.0):
+                time.sleep(delay)
+                for hwnd in self._slot_window_handles(slot):
+                    try:
+                        length = u32.GetWindowTextLengthW(hwnd)
+                        buff = ctypes.create_unicode_buffer(length + 1)
+                        u32.GetWindowTextW(hwnd, buff, length + 1)
+                        title = (buff.value or "").lower()
+                        if "anydesk" in title and f"[sessão {slot}]" not in title:
+                            u32.SetWindowTextW(hwnd, custom_title)
+                    except Exception:
+                        pass
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def focus_slot(self, slot: int) -> bool:
+        """Traz a janela existente da sessão para frente (restaura se minimizada).
+
+        Retorna ``True`` se encontrou e focou alguma janela da sessão.
+        """
+        u32 = self._user32()
+        if u32 is None:
             return False
-        hwnd = found[0]
+        handles = self._slot_window_handles(slot)
+        if not handles:
+            return False
+        hwnd = handles[0]
         sw_restore, sw_show = 9, 5
         try:
             u32.ShowWindow(hwnd, sw_restore if u32.IsIconic(hwnd) else sw_show)

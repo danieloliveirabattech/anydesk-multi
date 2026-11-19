@@ -57,6 +57,7 @@ class SlotCard(QtWidgets.QFrame):
     def __init__(self, slot: int):
         super().__init__()
         self.slot = slot
+        self.running = False
         self.setObjectName("card")
         self.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
 
@@ -106,6 +107,7 @@ class SlotCard(QtWidgets.QFrame):
 
     def update_status(self, st) -> None:
         running = st.running
+        self.running = running
         self.dot.setObjectName("dotOn" if running else "dotOff")
         self.state.setText("em execução" if running else "parado")
         self.id_label.setText(st.formatted_id)
@@ -526,6 +528,16 @@ class MainWindow(QtWidgets.QMainWindow):
     def _card_connect(self, slot: int) -> None:
         if not self._require_manager():
             return
+        if self.cards[slot].running:
+            resp = QtWidgets.QMessageBox.question(
+                self,
+                f"Sessão {slot} em uso",
+                f"A sessão {slot} já está aberta. Abrir uma nova conexão aqui pode "
+                "atrapalhar a sessão atual.\n\nDica: a Conexão Rápida usa uma sessão "
+                "livre automaticamente.\n\nConectar mesmo assim?",
+            )
+            if resp != QtWidgets.QMessageBox.StandardButton.Yes:
+                return
         rid, ok = QtWidgets.QInputDialog.getText(
             self, f"Conectar — Sessão {slot}", "ID AnyDesk do destino:"
         )
@@ -560,6 +572,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _kill_all(self) -> None:
         if not self._require_manager():
+            return
+        running = [s for s, c in self.cards.items() if c.running]
+        if not running:
+            self.statusBar().showMessage("Nenhuma sessão em execução.", 4000)
+            return
+        resp = QtWidgets.QMessageBox.question(
+            self,
+            "Encerrar tudo",
+            f"Encerrar as {len(running)} sessões abertas agora?",
+        )
+        if resp != QtWidgets.QMessageBox.StandardButton.Yes:
             return
         self._spawn(
             self.manager.kill_all,
