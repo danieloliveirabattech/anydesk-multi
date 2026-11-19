@@ -21,25 +21,25 @@ def _build_manager(args: argparse.Namespace) -> AnyDeskManager:
 
 def _cmd_list(mgr: AnyDeskManager, _args: argparse.Namespace) -> int:
     scan = mgr.scan()
-    print(f"{'SLOT':<5}{'ESTADO':<12}{'ID ANYDESK':<16}{'PIDS'}")
+    print(f"{'SESSÃO':<8}{'ESTADO':<12}{'ID ANYDESK':<16}{'PIDS'}")
     print("-" * 45)
     for slot in sorted(scan):
         st = scan[slot]
         estado = "em execução" if st.running else "parado"
         pids = ",".join(map(str, st.pids)) or "-"
-        print(f"{slot:<5}{estado:<12}{st.formatted_id:<16}{pids}")
+        print(f"{slot:<8}{estado:<12}{st.formatted_id:<16}{pids}")
     return 0
 
 
 def _cmd_ids(mgr: AnyDeskManager, _args: argparse.Namespace) -> int:
     for slot in range(1, mgr.max_slots + 1):
-        print(f"slot {slot}: {mgr.format_id(mgr.get_id(slot, force_reload=True))}")
+        print(f"sessão {slot}: {mgr.format_id(mgr.get_id(slot, force_reload=True))}")
     return 0
 
 
 def _cmd_connect(mgr: AnyDeskManager, args: argparse.Namespace) -> int:
     ok, msg, slot = mgr.connect(args.id)
-    print(msg if not ok else f"[slot {slot}] {msg}")
+    print(msg if not ok else f"[sessão {slot}] {msg}")
     return 0 if ok else 1
 
 
@@ -51,7 +51,7 @@ def _cmd_launch(mgr: AnyDeskManager, args: argparse.Namespace) -> int:
 
 def _cmd_kill(mgr: AnyDeskManager, args: argparse.Namespace) -> int:
     n = mgr.kill(args.slot)
-    print(f"slot {args.slot}: {n} processo(s) encerrado(s).")
+    print(f"sessão {args.slot}: {n} processo(s) encerrado(s).")
     return 0
 
 
@@ -62,19 +62,19 @@ def _cmd_kill_all(mgr: AnyDeskManager, _args: argparse.Namespace) -> int:
 
 def _cmd_clean(mgr: AnyDeskManager, args: argparse.Namespace) -> int:
     ok, actions = mgr.clean(args.slot, new_id=args.new_id)
-    print(f"slot {args.slot}:")
+    print(f"sessão {args.slot}:")
     for a in actions:
         print(f"  - {a}")
     return 0 if ok else 1
 
 
 def _cmd_info(mgr: AnyDeskManager, _args: argparse.Namespace) -> int:
-    print(f"AnyDesk.exe : {mgr.anydesk_exe}")
-    print(f"Dados       : {mgr.data_dir}")
-    print(f"Fontes/slot : {mgr.sources_dir}")
-    print(f"Slots       : {mgr.max_slots}")
+    print(f"AnyDesk.exe    : {mgr.anydesk_exe}")
+    print(f"Dados          : {mgr.data_dir}")
+    print(f"Fontes/sessão  : {mgr.sources_dir}")
+    print(f"Sessões        : {mgr.max_slots}")
     distinct = sum(mgr.uses_distinct_binary(s) for s in range(1, mgr.max_slots + 1))
-    print(f"Binário/slot: {distinct}/{mgr.max_slots} com binário próprio")
+    print(f"Binário/sessão : {distinct}/{mgr.max_slots} com binário próprio")
     return 0
 
 
@@ -88,7 +88,7 @@ def _cmd_sources(mgr: AnyDeskManager, _args: argparse.Namespace) -> int:
         own = mgr.uses_distinct_binary(slot)
         marca = "próprio" if own else "fallback (exe único)"
         print(
-            f"  slot {slot}: {mgr.sources_dir / slot_source_filename(slot)}"
+            f"  sessão {slot}: {mgr.sources_dir / slot_source_filename(slot)}"
             f"  -> {marca}"
         )
     return 0
@@ -104,11 +104,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--data-dir", help="Diretório de dados/perfis (padrão: automático).")
     p.add_argument(
         "--sources-dir",
-        help="Pasta com um AnyDesk.exe por slot (padrão: <data-dir>/sources).",
+        help="Pasta com um AnyDesk.exe por sessão (padrão: <data-dir>/sources).",
     )
     p.add_argument(
         "--slots", type=int, default=None,
-        help="Número de slots gerenciados (padrão: 4).",
+        help="Número de sessões gerenciadas (padrão: 4).",
     )
     p.add_argument(
         "--low-priority", action="store_true",
@@ -118,24 +118,24 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
 
     sub.add_parser("info", help="Mostra caminhos e configuração resolvidos.")
-    sub.add_parser("sources", help="Mostra o binário-fonte de cada slot.")
-    sub.add_parser("list", help="Lista o estado de cada slot.")
-    sub.add_parser("ids", help="Mostra o ID AnyDesk de cada slot.")
+    sub.add_parser("sources", help="Mostra o binário-fonte de cada sessão.")
+    sub.add_parser("list", help="Lista o estado de cada sessão.")
+    sub.add_parser("ids", help="Mostra o ID AnyDesk de cada sessão.")
 
-    c = sub.add_parser("connect", help="Conecta a um ID no primeiro slot livre.")
+    c = sub.add_parser("connect", help="Conecta a um ID na primeira sessão livre.")
     c.add_argument("id", help="ID AnyDesk do destino (>= 9 dígitos).")
 
-    l = sub.add_parser("launch", help="Inicia um slot específico.")
-    l.add_argument("slot", type=int)
+    l = sub.add_parser("launch", help="Inicia uma sessão específica.")
+    l.add_argument("slot", type=int, help="Número da sessão (ex.: 1, 2, ...)")
     l.add_argument("id", nargs="?", default=None, help="ID opcional para já conectar.")
 
-    k = sub.add_parser("kill", help="Encerra um slot específico.")
-    k.add_argument("slot", type=int)
+    k = sub.add_parser("kill", help="Encerra uma sessão específica.")
+    k.add_argument("slot", type=int, help="Número da sessão (ex.: 1, 2, ...)")
 
-    sub.add_parser("kill-all", help="Encerra todos os slots gerenciados.")
+    sub.add_parser("kill-all", help="Encerra todas as sessões gerenciadas.")
 
-    cl = sub.add_parser("clean", help="Limpa o cache de um slot.")
-    cl.add_argument("slot", type=int)
+    cl = sub.add_parser("clean", help="Limpa o cache de uma sessão.")
+    cl.add_argument("slot", type=int, help="Número da sessão (ex.: 1, 2, ...)")
     cl.add_argument(
         "--new-id", action="store_true",
         help="Apaga o perfil e gera um AnyDesk ID novo.",

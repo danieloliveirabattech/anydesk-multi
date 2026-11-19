@@ -63,9 +63,8 @@ anydesk-multi sources
 ```
 
 Ordem de resolução por slot: binário explícito (API `slot_binaries=`) →
-`sources/AnyDesk_Inst<N>.exe` → `AnyDesk.exe` único (fallback). Use
-`--sources-dir` para apontar outra pasta. Baixe versões antigas do AnyDesk em
-<https://download.anydesk.com/>.
+`sources/AnyDesk_Inst<N>.exe` → binário dedicado embutido no pacote (`vendor/AnyDesk_Inst<N>.exe`) →
+`AnyDesk.exe` único (fallback). Use `--sources-dir` para apontar outra pasta.
 
 ## Requisitos
 

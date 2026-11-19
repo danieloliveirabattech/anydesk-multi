@@ -100,6 +100,31 @@ def bundled_anydesk_exe() -> Path | None:
     return fallback if fallback.exists() else None
 
 
+def bundled_slot_exe(slot: int) -> Path | None:
+    """Caminho do binário dedicado de um slot embutido no pacote (``anydesk_multi/vendor``).
+
+    Exemplo: ``AnyDesk_Inst1.exe``, ``AnyDesk_Inst2.exe``, etc.
+    Retorna ``None`` se o executável daquele slot não estiver embutido.
+    """
+    filename = slot_source_filename(slot)
+    if getattr(sys, "frozen", False):
+        base = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+        p = base / "anydesk_multi" / "vendor" / filename
+        if p.exists():
+            return p
+
+    try:
+        from importlib.resources import files
+
+        res = Path(str(files("anydesk_multi") / "vendor" / filename))
+        if res.exists():
+            return res
+    except (ModuleNotFoundError, FileNotFoundError, TypeError, OSError):
+        pass
+    fallback = Path(__file__).resolve().parent / "vendor" / filename
+    return fallback if fallback.exists() else None
+
+
 def bundled_icon() -> Path | None:
     """Caminho do ícone do app (``anydesk_multi/assets/icon.ico``)."""
     rel = ("assets", "icon.ico")

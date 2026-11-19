@@ -53,7 +53,6 @@ class SlotCard(QtWidgets.QFrame):
     connect_requested = QtCore.pyqtSignal(int)   # slot
     launch_requested = QtCore.pyqtSignal(int)
     kill_requested = QtCore.pyqtSignal(int)
-    clean_requested = QtCore.pyqtSignal(int, bool)  # slot, new_id
 
     def __init__(self, slot: int):
         super().__init__()
@@ -61,7 +60,7 @@ class SlotCard(QtWidgets.QFrame):
         self.setObjectName("card")
         self.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
 
-        title = QtWidgets.QLabel(f"Slot {slot}")
+        title = QtWidgets.QLabel(f"Sessão {slot}")
         title.setObjectName("cardTitle")
 
         self.dot = QtWidgets.QLabel("●")
@@ -86,24 +85,16 @@ class SlotCard(QtWidgets.QFrame):
         self.btn_launch = QtWidgets.QPushButton("Abrir")
         self.btn_connect = QtWidgets.QPushButton("Conectar…")
         self.btn_kill = QtWidgets.QPushButton("Encerrar")
-        self.btn_clean = QtWidgets.QPushButton("Limpar")
-        self.btn_newid = QtWidgets.QPushButton("Novo ID")
         self.btn_kill.setObjectName("danger")
 
         self.btn_launch.clicked.connect(lambda: self.launch_requested.emit(self.slot))
         self.btn_connect.clicked.connect(lambda: self.connect_requested.emit(self.slot))
         self.btn_kill.clicked.connect(lambda: self.kill_requested.emit(self.slot))
-        self.btn_clean.clicked.connect(lambda: self.clean_requested.emit(self.slot, False))
-        self.btn_newid.clicked.connect(lambda: self.clean_requested.emit(self.slot, True))
 
         row1 = QtWidgets.QHBoxLayout()
         row1.addWidget(self.btn_launch)
         row1.addWidget(self.btn_connect)
         row1.addWidget(self.btn_kill)
-        row2 = QtWidgets.QHBoxLayout()
-        row2.addWidget(self.btn_clean)
-        row2.addWidget(self.btn_newid)
-        row2.addStretch(1)
 
         lay = QtWidgets.QVBoxLayout(self)
         lay.setContentsMargins(16, 14, 16, 14)
@@ -112,7 +103,6 @@ class SlotCard(QtWidgets.QFrame):
         lay.addWidget(self.pids_label)
         lay.addStretch(1)
         lay.addLayout(row1)
-        lay.addLayout(row2)
 
     def update_status(self, st) -> None:
         running = st.running
@@ -130,7 +120,6 @@ class SlotCard(QtWidgets.QFrame):
     def set_busy(self, busy: bool) -> None:
         for b in (
             self.btn_launch, self.btn_connect, self.btn_kill,
-            self.btn_clean, self.btn_newid,
         ):
             b.setEnabled(not busy)
 
@@ -376,7 +365,6 @@ class MainWindow(QtWidgets.QMainWindow):
             card.connect_requested.connect(self._card_connect)
             card.launch_requested.connect(self._card_launch)
             card.kill_requested.connect(self._card_kill)
-            card.clean_requested.connect(self._card_clean)
             self.cards[i] = card
             grid.addWidget(card, (i - 1) // 2, (i - 1) % 2)
         root.addLayout(grid, 1)
@@ -523,7 +511,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _after_connect(self, res) -> None:
         ok, msg, slot = res
         self.statusBar().showMessage(
-            (f"[slot {slot}] " if slot else "") + msg, 6000
+            (f"[sessão {slot}] " if slot else "") + msg, 6000
         )
         if ok:
             self.quick_input.clear()
@@ -532,11 +520,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if not self._require_manager():
             return
         rid, ok = QtWidgets.QInputDialog.getText(
-            self, f"Conectar — Slot {slot}", "ID AnyDesk do destino:"
+            self, f"Conectar — Sessão {slot}", "ID AnyDesk do destino:"
         )
         if not ok or not rid.strip():
             return
-        self.statusBar().showMessage(f"Slot {slot}: conectando em {rid}…")
+        self.statusBar().showMessage(f"Sessão {slot}: conectando em {rid}…")
         self._spawn(
             self.manager.launch,
             lambda res: self.statusBar().showMessage(res[1], 6000),
@@ -558,28 +546,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._spawn(
             self.manager.kill,
             lambda n: self.statusBar().showMessage(
-                f"Slot {slot}: {n} processo(s) encerrado(s).", 5000
+                f"Sessão {slot}: {n} processo(s) encerrado(s).", 5000
             ),
             slot,
-        )
-
-    def _card_clean(self, slot: int, new_id: bool) -> None:
-        if not self._require_manager():
-            return
-        if new_id:
-            ok = QtWidgets.QMessageBox.question(
-                self, "Gerar novo ID",
-                f"Apagar o perfil do slot {slot} e gerar um AnyDesk ID novo?",
-            )
-            if ok != QtWidgets.QMessageBox.StandardButton.Yes:
-                return
-        self.statusBar().showMessage(f"Slot {slot}: limpando…")
-        self._spawn(
-            self.manager.clean,
-            lambda res: self.statusBar().showMessage(
-                f"Slot {slot}: " + "; ".join(res[1]), 7000
-            ),
-            slot, new_id=new_id,
         )
 
     def _kill_all(self) -> None:
@@ -624,32 +593,26 @@ class MainWindow(QtWidgets.QMainWindow):
             {
                 "title": "Conexão Rápida",
                 "text": "Digite um ID AnyDesk aqui e clique em Conexão Rápida: o app "
-                "conecta no primeiro slot livre automaticamente.",
+                "conecta na primeira sessão livre automaticamente.",
                 "targets": [self.quick_input, self.quick_btn],
             },
             {
-                "title": "Os slots",
-                "text": "Cada cartão é uma instância isolada do AnyDesk, com ID "
+                "title": "As Sessões",
+                "text": "Cada cartão é uma sessão isolada do AnyDesk, com ID "
                 "próprio. Dá para rodar até quatro ao mesmo tempo, sem uma "
                 "atrapalhar a outra.",
                 "targets": [c],
             },
             {
                 "title": "Abrir e conectar",
-                "text": "“Abrir” sobe o slot sem conectar. “Conectar…” pede um ID e "
-                "conecta usando esse slot específico.",
+                "text": "“Abrir” sobe a sessão sem conectar. “Conectar…” pede um ID e "
+                "conecta usando essa sessão específica.",
                 "targets": [c.btn_launch, c.btn_connect],
-            },
-            {
-                "title": "Novo ID e Limpar",
-                "text": "“Novo ID” gera um AnyDesk ID novo para o slot. “Limpar” apaga "
-                "o cache da sessão, mantendo o ID.",
-                "targets": [c.btn_clean, c.btn_newid],
             },
             {
                 "title": "Encerrar e atualizar",
                 "text": "“Encerrar tudo” fecha todas as sessões de uma vez. "
-                "“Atualizar” relê o estado dos slots na hora.",
+                "“Atualizar” relê o estado das sessões na hora.",
                 "targets": [self.btn_refresh, self.btn_killall],
             },
             {

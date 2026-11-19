@@ -18,8 +18,10 @@ auto-update ou armazenamento de senhas. É só orquestração local de processos
 """
 from __future__ import annotations
 
+import ctypes
 import shutil
 import subprocess
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -92,6 +94,7 @@ class AnyDeskManager:
         """Qual AnyDesk.exe usar como ORIGEM da cópia deste slot.
 
         Ordem: mapeamento explícito -> ``sources/AnyDesk_Inst<slot>.exe`` ->
+        binário embutido por slot (``vendor/AnyDesk_Inst<slot>.exe``) ->
         o executável único (fallback, mesmo binário para todos).
         """
         explicit = self.slot_binaries.get(slot)
@@ -100,11 +103,16 @@ class AnyDeskManager:
         conv = self.sources_dir / config.slot_source_filename(slot)
         if conv.exists():
             return conv
+        bundled = config.bundled_slot_exe(slot)
+        if bundled and bundled.exists():
+            return bundled
         return self.anydesk_exe
 
     def uses_distinct_binary(self, slot: int) -> bool:
         """True se o slot tem binário-fonte próprio (não o fallback único)."""
-        return self.source_exe_for_slot(slot) != self.anydesk_exe
+        src = self.source_exe_for_slot(slot)
+        bundled = config.bundled_slot_exe(slot)
+        return (bundled is not None and src == bundled) or (src != self.anydesk_exe)
 
     # ------------------------------------------------------------------ #
     # Caminhos por slot
@@ -221,8 +229,9 @@ class AnyDeskManager:
                 except (psutil.AccessDenied, psutil.NoSuchProcess):
                     cmd = ""
                 for slot in range(1, self.max_slots + 1):
-                    tag = f"anydesk_slot{slot}"
-                    if tag in name or tag in cmd:
+                    tag_slot = f"anydesk_slot{slot}"
+                    tag_inst = f"anydesk_inst{slot}"
+                    if tag_slot in name or tag_slot in cmd or tag_inst in name or tag_inst in cmd:
                         pids_by_slot[slot].append(proc.info["pid"])
                         break
             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -245,18 +254,94 @@ class AnyDeskManager:
         return self.scan().get(slot, SlotStatus(slot, False)).running
 
     # ------------------------------------------------------------------ #
+    # Sanitização preventiva
+    # ------------------------------------------------------------------ #
+    def sanitize_slot(self, slot: int) -> None:
+        """Limpeza preventiva antes do launch para evitar colisões e sessões presas.
+
+        - Remove locks e traces temporários
+        - Remove user.conf (elimina estado preso de sessões/abas anteriores)
+        - Preserva system.conf para manter o AnyDesk ID do slot
+        """
+        conf_dir = self._anydesk_conf_dir(slot)
+        if conf_dir.exists():
+            for sub in ("cache", "global_cache", "thumbnails"):
+                shutil.rmtree(conf_dir / sub, ignore_errors=True)
+            for fname in (
+                "system.conf.lock",
+                "service.conf.lock",
+                "user.conf.lock",
+                "connection_trace.txt",
+                "file_transfer_trace.txt",
+                "ad.trace",
+                "anydesk.trace",
+                "user.conf",
+            ):
+                try:
+                    (conf_dir / fname).unlink()
+                except OSError:
+                    pass
+
+    # ------------------------------------------------------------------ #
+    # Identificação visual de janela
+    # ------------------------------------------------------------------ #
+    def _tag_window_title_async(self, slot: int, remote_id: str | None = None) -> None:
+        """Renomeia a janela do AnyDesk para identificar o slot (ex.: AnyDesk [SLOT 1])."""
+        def _worker():
+            try:
+                user32 = getattr(ctypes, "windll", None)
+                if not user32 or not hasattr(user32, "user32"):
+                    return
+                u32 = user32.user32
+                WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+                fmt_id = self.format_id(remote_id) if remote_id else ""
+                custom_title = (
+                    f"AnyDesk [SESSÃO {slot}] • Conectando em {fmt_id}"
+                    if fmt_id
+                    else f"AnyDesk [SESSÃO {slot}]"
+                )
+
+                for delay in (1.0, 2.0, 3.5, 5.0):
+                    time.sleep(delay)
+                    scan = self.scan()
+                    pids = set(scan.get(slot, SlotStatus(slot, False)).pids)
+                    if not pids:
+                        continue
+
+                    def enum_cb(hwnd, _):
+                        if u32.IsWindow(hwnd) and u32.IsWindowVisible(hwnd):
+                            pid = ctypes.c_ulong()
+                            u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                            if pid.value in pids:
+                                length = u32.GetWindowTextLengthW(hwnd)
+                                if length > 0:
+                                    buff = ctypes.create_unicode_buffer(length + 1)
+                                    u32.GetWindowTextW(hwnd, buff, length + 1)
+                                    title = buff.value
+                                    if "anydesk" in title.lower() and f"[sessão {slot}]".lower() not in title.lower() and f"[slot {slot}]".lower() not in title.lower():
+                                        u32.SetWindowTextW(hwnd, custom_title)
+                        return True
+
+                    u32.EnumWindows(WNDENUMPROC(enum_cb), 0)
+            except Exception:
+                pass
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    # ------------------------------------------------------------------ #
     # Lançamento / conexão
     # ------------------------------------------------------------------ #
     def launch(self, slot: int, remote_id: str | None = None) -> tuple[bool, str]:
-        """Inicia o slot (isolado). Se ``remote_id`` for dado, já conecta nele."""
+        """Inicia a sessão (isolada). Se ``remote_id`` for dado, já conecta nele."""
         if not 1 <= slot <= self.max_slots:
-            return False, f"Slot {slot} fora do intervalo 1..{self.max_slots}."
+            return False, f"Sessão {slot} fora do intervalo 1..{self.max_slots}."
 
         clean_id = _digits(remote_id) if remote_id else None
         if remote_id is not None and (clean_id is None or len(clean_id) < 9):
             return False, f"ID AnyDesk inválido: {remote_id!r} (mínimo 9 dígitos)."
 
         self._make_profile_dirs(slot)
+        self.sanitize_slot(slot)
         exe = self._slot_exe(slot)
         args = [str(exe)] + ([clean_id] if clean_id else [])
         creationflags = _BELOW_NORMAL_PRIORITY if self.lower_priority else 0
@@ -269,16 +354,17 @@ class AnyDeskManager:
                 creationflags=creationflags,
             )
         except OSError as exc:
-            return False, f"Falha ao iniciar o slot {slot}: {exc}"
+            return False, f"Falha ao iniciar a sessão {slot}: {exc}"
 
+        self._tag_window_title_async(slot, clean_id)
         suffix = f" conectando em {self.format_id(clean_id)}" if clean_id else ""
-        return True, f"Slot {slot} iniciado{suffix}."
+        return True, f"Sessão {slot} iniciada{suffix}."
 
     def connect(self, remote_id: str) -> tuple[bool, str, int]:
-        """Conecta a ``remote_id`` no primeiro slot livre.
+        """Conecta a ``remote_id`` na primeira sessão livre.
 
-        Retorna ``(sucesso, mensagem, slot_usado)``. Se nenhum slot estiver
-        livre, ``slot_usado`` é ``0``.
+        Retorna ``(sucesso, mensagem, sessao_usada)``. Se nenhuma sessão estiver
+        livre, ``sessao_usada`` é ``0``.
         """
         clean_id = _digits(remote_id)
         if not clean_id or len(clean_id) < 9:
@@ -289,7 +375,7 @@ class AnyDeskManager:
         if not free:
             return (
                 False,
-                f"Todos os {self.max_slots} slots estão ocupados. "
+                f"Todas as {self.max_slots} sessões estão ocupadas. "
                 "Encerre uma conexão antes de abrir outra.",
                 0,
             )

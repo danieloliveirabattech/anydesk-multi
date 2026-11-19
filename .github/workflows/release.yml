@@ -26,7 +26,7 @@ jobs:
           pip install pyinstaller psutil "PyQt6>=6.6"
 
       - name: Compilar executável (onefile)
-        run: pyinstaller --noconfirm --onefile --windowed --name AnyDeskMulti --icon "anydesk_multi/assets/icon.ico" --add-data "anydesk_multi/vendor/AnyDesk.exe;anydesk_multi/vendor" --add-data "anydesk_multi/assets/icon.ico;anydesk_multi/assets" app.py
+        run: pyinstaller --noconfirm --onefile --windowed --name AnyDeskMulti --icon "anydesk_multi/assets/icon.ico" --add-data "anydesk_multi/vendor;anydesk_multi/vendor" --add-data "anydesk_multi/assets/icon.ico;anydesk_multi/assets" app.py
 
       - name: Publicar na Releases
         uses: softprops/action-gh-release@v2
