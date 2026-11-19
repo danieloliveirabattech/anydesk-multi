@@ -113,6 +113,13 @@ class SlotCard(QtWidgets.QFrame):
             f"PIDs: {', '.join(map(str, st.pids))}" if st.pids else "—"
         )
         self.btn_kill.setEnabled(running)
+        # Botão adaptativo: sessão em execução -> "Focar" (traz a janela à frente);
+        # parada -> "Abrir" (inicia a sessão).
+        self.btn_launch.setText("Focar" if running else "Abrir")
+        self.btn_launch.setToolTip(
+            "Trazer a janela desta sessão para frente" if running
+            else "Abrir esta sessão"
+        )
         # Reaplica o estilo do dot (objectName mudou).
         self.dot.style().unpolish(self.dot)
         self.dot.style().polish(self.dot)

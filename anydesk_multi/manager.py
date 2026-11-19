@@ -328,17 +328,74 @@ class AnyDeskManager:
 
         threading.Thread(target=_worker, daemon=True).start()
 
+    def focus_slot(self, slot: int) -> bool:
+        """Traz a janela existente da sessão para frente (restaura se minimizada).
+
+        Retorna ``True`` se encontrou e focou alguma janela da sessão.
+        """
+        try:
+            windll = getattr(ctypes, "windll", None)
+            if not windll or not hasattr(windll, "user32"):
+                return False
+            u32 = windll.user32
+        except Exception:
+            return False
+
+        pids = set(self.scan().get(slot, SlotStatus(slot, False)).pids)
+        if not pids:
+            return False
+
+        found: list = []
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+        def enum_cb(hwnd, _):
+            try:
+                if u32.IsWindow(hwnd) and u32.IsWindowVisible(hwnd):
+                    pid = ctypes.c_ulong()
+                    u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                    if pid.value in pids and u32.GetWindowTextLengthW(hwnd) > 0:
+                        found.append(hwnd)
+            except Exception:
+                pass
+            return True
+
+        try:
+            u32.EnumWindows(WNDENUMPROC(enum_cb), 0)
+        except Exception:
+            return False
+
+        if not found:
+            return False
+        hwnd = found[0]
+        sw_restore, sw_show = 9, 5
+        try:
+            u32.ShowWindow(hwnd, sw_restore if u32.IsIconic(hwnd) else sw_show)
+            u32.SetForegroundWindow(hwnd)
+        except Exception:
+            return False
+        return True
+
     # ------------------------------------------------------------------ #
     # Lançamento / conexão
     # ------------------------------------------------------------------ #
     def launch(self, slot: int, remote_id: str | None = None) -> tuple[bool, str]:
-        """Inicia a sessão (isolada). Se ``remote_id`` for dado, já conecta nele."""
+        """Inicia a sessão (isolada). Se ``remote_id`` for dado, já conecta nele.
+
+        Se a sessão já estiver aberta e nenhum destino novo for informado, traz
+        a janela existente para frente em vez de abrir outra instância.
+        """
         if not 1 <= slot <= self.max_slots:
             return False, f"Sessão {slot} fora do intervalo 1..{self.max_slots}."
 
         clean_id = _digits(remote_id) if remote_id else None
         if remote_id is not None and (clean_id is None or len(clean_id) < 9):
             return False, f"ID AnyDesk inválido: {remote_id!r} (mínimo 9 dígitos)."
+
+        # UX: não duplicar uma sessão já aberta — focar a janela existente.
+        if clean_id is None and self.is_running(slot):
+            if self.focus_slot(slot):
+                return True, f"Sessão {slot} já aberta — trazida para frente."
+            return True, f"Sessão {slot} já está em execução."
 
         self._make_profile_dirs(slot)
         self.sanitize_slot(slot)
